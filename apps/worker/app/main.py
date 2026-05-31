@@ -202,9 +202,12 @@ def get_baseline(repo: str, branch: str = "main"):
 
 @app.get("/v1/artifacts/{job_id}/{filename}")
 def get_artifact(job_id: str, filename: str):
-    if ".." in job_id or ".." in filename:
+    if ".." in job_id or ".." in filename or "/" in filename or "\\" in filename:
         raise HTTPException(400, "Invalid path")
-    path = JOBS_ROOT / job_id / filename
+    path = (JOBS_ROOT / job_id / filename).resolve()
+    jobs_root = JOBS_ROOT.resolve()
+    if not path.is_relative_to(jobs_root):
+        raise HTTPException(400, "Invalid path")
     if not path.exists():
         raise HTTPException(404, "Artifact not found")
     return FileResponse(

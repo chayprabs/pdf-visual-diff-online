@@ -12,9 +12,21 @@ ROOT = Path(__file__).resolve().parents[3]
 SAMPLES = ROOT / "samples"
 
 
+REQUIRED_SAMPLES = (
+    "contract-v1.pdf",
+    "contract-v2.pdf",
+    "report-baseline.pdf",
+    "report-drift.pdf",
+    "layout-a.pdf",
+    "layout-b.pdf",
+    "signed-baseline.pdf",
+    "signed-candidate-unsigned.pdf",
+)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def ensure_samples():
-    if not (SAMPLES / "contract-v1.pdf").exists():
+    if any(not (SAMPLES / name).exists() for name in REQUIRED_SAMPLES):
         subprocess.run([sys.executable, str(ROOT / "scripts" / "generate_samples.py")], check=True)
 
 

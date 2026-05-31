@@ -54,29 +54,52 @@ def _downscale_for_diff(img: Image.Image, max_side: int = MAX_DIFF_SIDE_PX) -> I
     )
 
 
+def _cap_dpi_for_page(doc: fitz.Document, page_num: int, dpi: int, max_side: int = MAX_DIFF_SIDE_PX) -> int:
+    """Limit render DPI so the longest page side does not exceed max_side pixels."""
+    page = doc[page_num]
+    rect = page.rect
+    max_inches = max(rect.width, rect.height) / 72.0
+    if max_inches <= 0:
+        return dpi
+    pixels_at_dpi = max_inches * dpi
+    if pixels_at_dpi <= max_side:
+        return dpi
+    return max(36, int(max_side / max_inches))
+
+
 def _pixel_diff_pct(
     img_a: Image.Image, img_b: Image.Image, tolerance: int
 ) -> tuple[float, Image.Image, list[tuple[float, float, float, float]], bool]:
+    full_size = img_a.size
     size_mismatch = img_a.size != img_b.size
     if size_mismatch:
         img_b = img_b.resize(img_a.size, Image.Resampling.LANCZOS)
-    img_a = _downscale_for_diff(img_a)
-    img_b = _downscale_for_diff(img_b)
-    if img_b.size != img_a.size:
-        img_b = img_b.resize(img_a.size, Image.Resampling.LANCZOS)
-    a = np.array(img_a.convert("RGB"), dtype=np.int16)
-    b = np.array(img_b.convert("RGB"), dtype=np.int16)
+    diff_a = _downscale_for_diff(img_a)
+    diff_b = _downscale_for_diff(img_b)
+    if diff_b.size != diff_a.size:
+        diff_b = diff_b.resize(diff_a.size, Image.Resampling.LANCZOS)
+    a = np.array(diff_a.convert("RGB"), dtype=np.int16)
+    b = np.array(diff_b.convert("RGB"), dtype=np.int16)
     channel_max = np.abs(a - b).max(axis=2)
     mask = channel_max > tolerance
     pct = float(mask.mean() * 100.0) if mask.size else 0.0
     mask_rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
     mask_rgb[mask] = [255, 0, 0]
     mask_img = Image.fromarray(mask_rgb)
+    if mask_img.size != full_size:
+        mask_img = mask_img.resize(full_size, Image.Resampling.NEAREST)
+    scale_x = full_size[0] / diff_a.width if diff_a.width else 1.0
+    scale_y = full_size[1] / diff_a.height if diff_a.height else 1.0
     bboxes: list[tuple[float, float, float, float]] = []
     if mask.any():
-        ys, xs = np.where(mask)
+        ys, xs = np.where(channel_max > tolerance)
         bboxes.append(
-            (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
+            (
+                float(xs.min()) * scale_x,
+                float(ys.min()) * scale_y,
+                float(xs.max()) * scale_x,
+                float(ys.max()) * scale_y,
+            )
         )
     return pct, mask_img, bboxes, size_mismatch
 
@@ -361,6 +384,21 @@ def _resource_diff(
     }
 
 
+def _object_diff_has_changes(obj_diff: dict[str, Any]) -> bool:
+    for value in obj_diff.values():
+        if isinstance(value, list) and value:
+            return True
+    return False
+
+
+def _font_diff_has_changes(font_diff: dict[str, Any]) -> bool:
+    for section in ("fonts", "images"):
+        block = font_diff.get(section) or {}
+        if block.get("added") or block.get("removed"):
+            return True
+    return False
+
+
 def _build_summary(pages: list[PageDiff], meta_diff: dict, sig: dict[str, SignatureInfo]) -> str:
     lines = []
     changed = [p for p in pages if p.pixelDiffPct > 0 or p.changes]
@@ -460,10 +498,15 @@ def compare_pdfs(
             mask_path: Path | None = None
             baseline_png: Path | None = None
             candidate_png: Path | None = None
+            page_dpi = config.dpi
 
             if pn < len(doc_a) and pn < len(doc_b):
-                img_a = _render_page(doc_a, pn, config.dpi)
-                img_b = _render_page(doc_b, pn, config.dpi)
+                page_dpi = min(
+                    _cap_dpi_for_page(doc_a, pn, config.dpi),
+                    _cap_dpi_for_page(doc_b, pn, config.dpi),
+                )
+                img_a = _render_page(doc_a, pn, page_dpi)
+                img_b = _render_page(doc_b, pn, page_dpi)
                 pixel_pct, mask_img, bboxes, size_mismatch = _pixel_diff_pct(
                     img_a, img_b, config.tolerance
                 )
@@ -521,7 +564,7 @@ def compare_pdfs(
                 PageDiff(
                     page=page_num,
                     pixelDiffPct=pixel_pct,
-                    changes=_normalize_page_changes(changes, config.dpi),
+                    changes=_normalize_page_changes(changes, page_dpi),
                     maskPath=str(mask_path) if mask_path else None,
                     baselinePath=str(baseline_png) if baseline_png else None,
                     candidatePath=str(candidate_png) if candidate_png else None,
@@ -548,7 +591,7 @@ def compare_pdfs(
             "candidate": _signature_info(candidate_path, config.candidate_password),
         }
 
-        if meta_diff:
+        if meta_diff and pages:
             for k in meta_diff:
                 pages[0].changes.append(
                     PageChange(
@@ -568,20 +611,28 @@ def compare_pdfs(
         if config.threshold is not None:
             observed = max((p.pixelDiffPct for p in pages), default=0.0)
             structural_change = any(p.changes for p in pages)
+            signature_mismatch = sig["baseline"].present != sig["candidate"].present
+            object_change = _object_diff_has_changes(obj_diff) or _font_diff_has_changes(font_diff)
             page_count_mismatch = len(doc_a) != len(doc_b)
             pixel_ok = observed <= config.threshold
-            passes = pixel_ok and not structural_change and not page_count_mismatch
+            passes = (
+                pixel_ok
+                and not structural_change
+                and not page_count_mismatch
+                and not signature_mismatch
+                and not object_change
+            )
             failure_reason = None
             if not passes:
                 if page_count_mismatch:
                     failure_reason = "page_count_mismatch"
-                elif structural_change and not pixel_ok:
+                elif (structural_change or signature_mismatch or object_change) and not pixel_ok:
                     failure_reason = "structural_and_pixel"
-                elif structural_change:
+                elif structural_change or signature_mismatch or object_change:
                     failure_reason = "structural"
                 else:
                     failure_reason = "pixel_threshold"
-                if page_count_mismatch or structural_change:
+                if page_count_mismatch or structural_change or signature_mismatch or object_change:
                     observed = max(observed, 100.0) if observed == 0 else observed
             assertion = AssertionResult(
                 pass_=passes,

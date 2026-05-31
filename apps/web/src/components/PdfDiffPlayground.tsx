@@ -1,8 +1,8 @@
 "use client";
 
 import type { DiffResult, PageDiff } from "@pdf-diff/shared-types";
-import { BboxOverlay } from "@/components/BboxOverlay";
 import { DiffDrawer } from "@/components/DiffDrawer";
+import { PagePreview } from "@/components/PagePreview";
 import { Download, FileUp, Loader2, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { artifactUrl, runDiff } from "@/lib/api";
@@ -30,7 +30,11 @@ function FileSlot({
   const [dragOver, setDragOver] = useState(false);
 
   const acceptFile = (f: File | undefined) => {
-    if (f && f.type === "application/pdf") onFile(f);
+    if (!f) return;
+    const isPdf =
+      f.type === "application/pdf" ||
+      f.name.toLowerCase().endsWith(".pdf");
+    if (isPdf) onFile(f);
   };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,12 +122,27 @@ export function PdfDiffPlayground() {
   const abortRef = useRef<AbortController | null>(null);
 
   const loadSample = async (baselineUrl: string, candidateUrl: string) => {
-    const [bRes, cRes] = await Promise.all([fetch(baselineUrl), fetch(candidateUrl)]);
-    const bBlob = await bRes.blob();
-    const cBlob = await cRes.blob();
-    setBaseline(new File([bBlob], baselineUrl.split("/").pop() || "baseline.pdf", { type: "application/pdf" }));
-    setCandidate(new File([cBlob], candidateUrl.split("/").pop() || "candidate.pdf", { type: "application/pdf" }));
-    setError(null);
+    try {
+      const [bRes, cRes] = await Promise.all([fetch(baselineUrl), fetch(candidateUrl)]);
+      if (!bRes.ok || !cRes.ok) {
+        throw new Error("Could not load sample PDFs");
+      }
+      const bBlob = await bRes.blob();
+      const cBlob = await cRes.blob();
+      setBaseline(
+        new File([bBlob], baselineUrl.split("/").pop() || "baseline.pdf", {
+          type: "application/pdf",
+        }),
+      );
+      setCandidate(
+        new File([cBlob], candidateUrl.split("/").pop() || "candidate.pdf", {
+          type: "application/pdf",
+        }),
+      );
+      setError(null);
+    } catch {
+      setError("Failed to load sample files. Run scripts/generate_samples.py.");
+    }
   };
 
   const cancel = () => {
@@ -192,10 +211,13 @@ export function PdfDiffPlayground() {
           DPI
           <input
             type="number"
-            min={72}
-            max={300}
+            min={36}
+            max={600}
             value={dpi}
-            onChange={(e) => setDpi(Number(e.target.value))}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              setDpi(Number.isFinite(v) ? v : 150);
+            }}
             className="w-24 rounded border border-[var(--border)] px-2 py-1"
           />
         </label>
@@ -301,8 +323,18 @@ export function PdfDiffPlayground() {
               }`}
             >
               {result.assertion.pass ? "PASS" : "FAIL"} — observed{" "}
-              {result.assertion.observed.toFixed(2)}% (threshold{" "}
+              {result.assertion.observed.toFixed(2)}% pixel diff (threshold{" "}
               {result.assertion.threshold}%)
+              {!result.assertion.pass &&
+                result.assertion.failureReason &&
+                result.assertion.failureReason !== "pixel_threshold" && (
+                  <span className="mt-1 block text-xs font-normal">
+                    Also failed: structural/text/signature or page-count changes
+                    {result.assertion.failureReason === "page_count_mismatch"
+                      ? " (page count mismatch)"
+                      : ""}
+                  </span>
+                )}
             </div>
           )}
 
@@ -351,43 +383,7 @@ export function PdfDiffPlayground() {
             <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                 <h3 className="mb-3 text-sm font-medium">Page {currentPage.page}</h3>
-                {viewMode === "baseline" && currentPage.baselineUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={artifactUrl(currentPage.baselineUrl)} alt={`Baseline page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
-                )}
-                {viewMode === "candidate" && currentPage.candidateUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={artifactUrl(currentPage.candidateUrl)} alt={`Candidate page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
-                )}
-                {viewMode === "mask" && currentPage.maskUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={artifactUrl(currentPage.maskUrl)} alt={`Mask page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
-                )}
-                {viewMode === "overlay" && (currentPage.baselineUrl || currentPage.maskUrl) && (
-                  <div className="relative max-h-96">
-                    {currentPage.baselineUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        id={`page-img-${currentPage.page}`}
-                        src={artifactUrl(currentPage.baselineUrl)}
-                        alt=""
-                        className="w-full object-contain"
-                      />
-                    )}
-                    {currentPage.maskUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={artifactUrl(currentPage.maskUrl)} alt={`Overlay page ${currentPage.page}`} className="absolute inset-0 w-full object-contain opacity-60 mix-blend-multiply" />
-                    )}
-                    <BboxOverlay changes={currentPage.changes} imageWidth={800} imageHeight={1100} />
-                  </div>
-                )}
-                {(viewMode === "mask" || viewMode === "overlay" || viewMode === "baseline" || viewMode === "candidate") &&
-                  !currentPage.maskUrl &&
-                  !currentPage.baselineUrl &&
-                  !currentPage.candidateUrl && (
-                    <p className="text-sm text-[var(--muted)]">No preview for this page.</p>
-                  )}
-                {viewMode === "summary" && (
+                {viewMode === "summary" ? (
                   <ul className="space-y-2 text-sm">
                     {currentPage.changes.length === 0 ? (
                       <li className="text-[var(--muted)]">No changes on this page.</li>
@@ -400,6 +396,11 @@ export function PdfDiffPlayground() {
                       ))
                     )}
                   </ul>
+                ) : (
+                  <PagePreview
+                    page={currentPage}
+                    viewMode={viewMode as "baseline" | "candidate" | "mask" | "overlay"}
+                  />
                 )}
               </div>
               <DiffDrawer result={result} />

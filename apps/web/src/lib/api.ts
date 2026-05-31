@@ -42,8 +42,13 @@ export async function runDiff(
   }
 
   const data = await res.json();
-  if (data.assertion && "pass" in data.assertion === false && "pass_" in data.assertion) {
-    data.assertion.pass = data.assertion.pass_;
+  if (data.assertion) {
+    if ("pass" in data.assertion === false && "pass_" in data.assertion) {
+      data.assertion.pass = data.assertion.pass_;
+    }
+    if (data.assertion.failureReason === undefined && data.assertion.failure_reason) {
+      data.assertion.failureReason = data.assertion.failure_reason;
+    }
   }
   return data as DiffResult;
 }

@@ -78,6 +78,26 @@ def _pixel_diff_pct(
     return pct, mask_img, bboxes, size_mismatch
 
 
+def _bbox_to_pixels(
+    bbox: tuple[float, float, float, float], dpi: int, kind: str
+) -> tuple[float, float, float, float]:
+    if kind == "image" or not any(bbox):
+        return bbox
+    scale = dpi / 72.0
+    return (bbox[0] * scale, bbox[1] * scale, bbox[2] * scale, bbox[3] * scale)
+
+
+def _normalize_page_changes(changes: list[PageChange], dpi: int) -> list[PageChange]:
+    return [
+        PageChange(
+            kind=c.kind,
+            bbox=_bbox_to_pixels(c.bbox, dpi, c.kind),
+            description=c.description,
+        )
+        for c in changes
+    ]
+
+
 def _extract_text_blocks(doc: fitz.Document, page_num: int) -> list[dict[str, Any]]:
     page = doc[page_num]
     blocks = []
@@ -207,7 +227,12 @@ def _image_xrefs(path: Path, password: str | None = None) -> set[str]:
     return refs
 
 
-def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
+def _object_diff(
+    path_a: Path,
+    path_b: Path,
+    pwd_a: str | None = None,
+    pwd_b: str | None = None,
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "annotations": [],
         "formFields": [],
@@ -215,7 +240,7 @@ def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
         "bookmarks": [],
         "signatures": [],
     }
-    with pikepdf.open(path_a) as pa, pikepdf.open(path_b) as pb:
+    with pikepdf.open(path_a, password=pwd_a or "") as pa, pikepdf.open(path_b, password=pwd_b or "") as pb:
         names_a = {a.get("/T", str(i)): i for i, a in enumerate(pa.attachments)}
         names_b = {a.get("/T", str(i)): i for i, a in enumerate(pb.attachments)}
         for name in set(names_a) - set(names_b):
@@ -247,6 +272,10 @@ def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
             result["bookmarks"].append({"before": ba, "after": bb})
 
     doc_a, doc_b = fitz.open(path_a), fitz.open(path_b)
+    if pwd_a:
+        doc_a.authenticate(pwd_a)
+    if pwd_b:
+        doc_b.authenticate(pwd_b)
     try:
         for pn in range(min(len(doc_a), len(doc_b))):
             ann_a = doc_a[pn].annots()
@@ -275,9 +304,9 @@ def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
     return result
 
 
-def _signature_info(path: Path) -> SignatureInfo:
+def _signature_info(path: Path, password: str | None = None) -> SignatureInfo:
     try:
-        with pikepdf.open(path) as pdf:
+        with pikepdf.open(path, password=password or "") as pdf:
             if "/AcroForm" not in pdf.Root:
                 return SignatureInfo(present=False, details="No AcroForm")
             acro = pdf.Root.AcroForm
@@ -353,19 +382,23 @@ def _build_summary(pages: list[PageDiff], meta_diff: dict, sig: dict[str, Signat
     return " ".join(lines)
 
 
-def _create_composite_pdf(job_dir: Path, mask_paths: list[Path]) -> Path:
+def _create_composite_pdf(job_dir: Path, mask_paths: list[Path], max_width: int = 800) -> Path:
     composite = job_dir / "composite.pdf"
     out = fitz.open()
     for mp in mask_paths:
-        if mp.exists():
-            img = fitz.open(mp.as_posix())
-            rect = img[0].rect
-            page = out.new_page(width=rect.width, height=rect.height)
-            page.insert_image(rect, filename=mp.as_posix())
-            img.close()
+        if not mp.exists():
+            continue
+        thumb = job_dir / f"thumb-{mp.stem}.jpg"
+        img = Image.open(mp).convert("RGB")
+        if img.width > max_width:
+            ratio = max_width / img.width
+            img = img.resize((max_width, int(img.height * ratio)), Image.Resampling.LANCZOS)
+        img.save(thumb, "JPEG", quality=80, optimize=True)
+        page = out.new_page(width=img.width, height=img.height)
+        page.insert_image(page.rect, filename=thumb.as_posix())
     if len(out) == 0:
         out.new_page()
-    out.save(composite)
+    out.save(composite, garbage=4, deflate=True)
     out.close()
     return composite
 
@@ -485,7 +518,7 @@ def compare_pdfs(
                 PageDiff(
                     page=page_num,
                     pixelDiffPct=pixel_pct,
-                    changes=changes,
+                    changes=_normalize_page_changes(changes, config.dpi),
                     maskPath=str(mask_path) if mask_path else None,
                     baselinePath=str(baseline_png) if baseline_png else None,
                     candidatePath=str(candidate_png) if candidate_png else None,
@@ -495,7 +528,12 @@ def compare_pdfs(
         meta_a = _get_metadata(doc_a, baseline_path, config.baseline_password)
         meta_b = _get_metadata(doc_b, candidate_path, config.candidate_password)
         meta_diff = _metadata_diff(meta_a, meta_b)
-        obj_diff = _object_diff(baseline_path, candidate_path)
+        obj_diff = _object_diff(
+            baseline_path,
+            candidate_path,
+            config.baseline_password,
+            config.candidate_password,
+        )
         font_diff = _resource_diff(
             baseline_path,
             candidate_path,
@@ -503,8 +541,8 @@ def compare_pdfs(
             config.candidate_password,
         )
         sig = {
-            "baseline": _signature_info(baseline_path),
-            "candidate": _signature_info(candidate_path),
+            "baseline": _signature_info(baseline_path, config.baseline_password),
+            "candidate": _signature_info(candidate_path, config.candidate_password),
         }
 
         if meta_diff:
@@ -528,17 +566,25 @@ def compare_pdfs(
             observed = max((p.pixelDiffPct for p in pages), default=0.0)
             structural_change = any(p.changes for p in pages)
             page_count_mismatch = len(doc_a) != len(doc_b)
-            passes = (
-                observed <= config.threshold
-                and not structural_change
-                and not page_count_mismatch
-            )
-            if page_count_mismatch or structural_change:
-                observed = max(observed, 100.0) if observed == 0 else observed
+            pixel_ok = observed <= config.threshold
+            passes = pixel_ok and not structural_change and not page_count_mismatch
+            failure_reason = None
+            if not passes:
+                if page_count_mismatch:
+                    failure_reason = "page_count_mismatch"
+                elif structural_change and not pixel_ok:
+                    failure_reason = "structural_and_pixel"
+                elif structural_change:
+                    failure_reason = "structural"
+                else:
+                    failure_reason = "pixel_threshold"
+                if page_count_mismatch or structural_change:
+                    observed = max(observed, 100.0) if observed == 0 else observed
             assertion = AssertionResult(
                 pass_=passes,
                 threshold=config.threshold,
                 observed=observed,
+                failureReason=failure_reason,
             )
 
         result = DiffResult(

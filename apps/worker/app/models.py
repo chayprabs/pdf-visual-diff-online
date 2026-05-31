@@ -42,6 +42,7 @@ class AssertionResult(BaseModel):
     pass_: bool = Field(alias="pass")
     threshold: float
     observed: float
+    failureReason: str | None = Field(default=None, alias="failureReason")
 
     model_config = {"populate_by_name": True}
 

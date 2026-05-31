@@ -1,6 +1,38 @@
 "use client";
 
-import type { DiffResult } from "@pdf-diff/shared-types";
+import type { DiffResult, FontResourceDiff } from "@pdf-diff/shared-types";
+
+function FontResourceSection({ fontDiff }: { fontDiff: FontResourceDiff | undefined }) {
+  if (!fontDiff) return null;
+  return (
+    <>
+      <div className="mt-2 text-sm">
+        <p className="font-medium text-[var(--foreground)]">Fonts</p>
+        {fontDiff.fonts.added.length > 0 && (
+          <p className="text-[var(--muted)]">Added: {fontDiff.fonts.added.join(", ")}</p>
+        )}
+        {fontDiff.fonts.removed.length > 0 && (
+          <p className="text-[var(--muted)]">Removed: {fontDiff.fonts.removed.join(", ")}</p>
+        )}
+        {fontDiff.fonts.added.length === 0 && fontDiff.fonts.removed.length === 0 && (
+          <p className="text-[var(--muted)]">No font changes</p>
+        )}
+      </div>
+      <div className="mt-2 text-sm">
+        <p className="font-medium text-[var(--foreground)]">Images</p>
+        {fontDiff.images.added.length > 0 && (
+          <p className="text-[var(--muted)]">Added: {fontDiff.images.added.join(", ")}</p>
+        )}
+        {fontDiff.images.removed.length > 0 && (
+          <p className="text-[var(--muted)]">Removed: {fontDiff.images.removed.join(", ")}</p>
+        )}
+        {fontDiff.images.added.length === 0 && fontDiff.images.removed.length === 0 && (
+          <p className="text-[var(--muted)]">No image changes</p>
+        )}
+      </div>
+    </>
+  );
+}
 
 export function DiffDrawer({ result }: { result: DiffResult }) {
   return (
@@ -16,10 +48,15 @@ export function DiffDrawer({ result }: { result: DiffResult }) {
           <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
             Text diff
           </h4>
-          <ul className="mt-2 space-y-1 text-sm">
+          <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto text-sm">
             {result.textDiff.map((td) => (
               <li key={td.page} className="rounded bg-[#f5f5f5] px-2 py-1">
-                Page {td.page}: {td.changes?.length ?? 0} change(s)
+                <span className="font-medium">Page {td.page}</span>
+                <ul className="mt-1 space-y-0.5 text-[var(--muted)]">
+                  {(td.changes ?? []).slice(0, 5).map((c, i) => (
+                    <li key={i}>{c.description}</li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>
@@ -46,7 +83,7 @@ export function DiffDrawer({ result }: { result: DiffResult }) {
         <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
           Object diff
         </h4>
-        <pre className="mt-2 max-h-48 overflow-auto rounded bg-[#f5f5f5] p-2 text-xs">
+        <pre className="mt-2 max-h-40 overflow-auto rounded bg-[#f5f5f5] p-2 text-xs">
           {JSON.stringify(result.objectDiff ?? {}, null, 2)}
         </pre>
       </section>
@@ -55,13 +92,12 @@ export function DiffDrawer({ result }: { result: DiffResult }) {
         <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
           Metadata &amp; resources
         </h4>
-        <pre className="mt-2 max-h-48 overflow-auto rounded bg-[#f5f5f5] p-2 text-xs">
-          {JSON.stringify(
-            { metadataDiff: result.metadataDiff, fontDiff: result.fontDiff },
-            null,
-            2,
-          )}
-        </pre>
+        {result.metadataDiff && Object.keys(result.metadataDiff).length > 0 && (
+          <pre className="mt-2 max-h-32 overflow-auto rounded bg-[#f5f5f5] p-2 text-xs">
+            {JSON.stringify(result.metadataDiff, null, 2)}
+          </pre>
+        )}
+        <FontResourceSection fontDiff={result.fontDiff} />
       </section>
     </aside>
   );

@@ -26,6 +26,17 @@ export interface AssertionResult {
   pass: boolean;
   threshold: number;
   observed: number;
+  failureReason?:
+    | "pixel_threshold"
+    | "structural"
+    | "structural_and_pixel"
+    | "page_count_mismatch"
+    | null;
+}
+
+export interface FontResourceDiff {
+  fonts: { added: string[]; removed: string[] };
+  images: { added: string[]; removed: string[] };
 }
 
 export interface DiffResult {
@@ -38,7 +49,7 @@ export interface DiffResult {
   };
   textDiff?: { page: number; changes: PageChange[] }[];
   objectDiff?: Record<string, unknown>;
-  fontDiff?: Record<string, unknown>;
+  fontDiff?: FontResourceDiff;
   summary: string;
   assertion?: AssertionResult;
   bundleUrl?: string;

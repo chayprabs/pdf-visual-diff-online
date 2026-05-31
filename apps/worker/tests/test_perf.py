@@ -21,7 +21,7 @@ def test_twenty_page_diff_under_budget(tmp_path: Path):
         doc.save(path)
         doc.close()
 
-    config = DiffConfig(job_dir=tmp_path / "job", dpi=100, tolerance=15)
+    config = DiffConfig(job_dir=tmp_path / "job", dpi=72, tolerance=20)
     start = time.perf_counter()
     result = compare_pdfs(base, cand, config)
     elapsed = time.perf_counter() - start

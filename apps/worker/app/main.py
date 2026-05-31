@@ -105,15 +105,12 @@ def _open_compare(
     return JSONResponse(_serialize_result(result, job_id))
 
 
-@app.post("/v1/diff")
-async def diff_endpoint(
-    baseline: UploadFile = File(...),
-    candidate: UploadFile = File(...),
-    dpi: int = Form(150),
-    tolerance: int = Form(12),
-    baseline_password: str = Form(""),
-    candidate_password: str = Form(""),
-):
+def _handle_compare(
+    baseline: UploadFile,
+    candidate: UploadFile,
+    config: DiffConfig,
+    error_label: str,
+) -> JSONResponse:
     _cleanup_stale_jobs()
     job_id = uuid.uuid4().hex
     job_dir = JOBS_ROOT / job_id
@@ -123,17 +120,32 @@ async def diff_endpoint(
     try:
         _save_upload(baseline, baseline_path)
         _save_upload(candidate, candidate_path)
-        config = _parse_opts(dpi, tolerance, None)
         config.job_dir = job_dir
-        config.baseline_password = baseline_password or None
-        config.candidate_password = candidate_password or None
         return _open_compare(baseline_path, candidate_path, config, job_id)
     except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
         raise
     except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
+        shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(422, str(exc) or "Invalid or corrupt PDF") from exc
     except Exception as exc:
-        raise HTTPException(500, "Diff failed") from exc
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise HTTPException(500, error_label) from exc
+
+
+@app.post("/v1/diff")
+async def diff_endpoint(
+    baseline: UploadFile = File(...),
+    candidate: UploadFile = File(...),
+    dpi: int = Form(150),
+    tolerance: int = Form(12),
+    baseline_password: str = Form(""),
+    candidate_password: str = Form(""),
+):
+    config = _parse_opts(dpi, tolerance, None)
+    config.baseline_password = baseline_password or None
+    config.candidate_password = candidate_password or None
+    return _handle_compare(baseline, candidate, config, "Diff failed")
 
 
 @app.post("/v1/assert")
@@ -146,26 +158,10 @@ async def assert_endpoint(
     baseline_password: str = Form(""),
     candidate_password: str = Form(""),
 ):
-    _cleanup_stale_jobs()
-    job_id = uuid.uuid4().hex
-    job_dir = JOBS_ROOT / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-    baseline_path = job_dir / "baseline.pdf"
-    candidate_path = job_dir / "candidate.pdf"
-    try:
-        _save_upload(baseline, baseline_path)
-        _save_upload(candidate, candidate_path)
-        config = _parse_opts(dpi, tolerance, threshold)
-        config.job_dir = job_dir
-        config.baseline_password = baseline_password or None
-        config.candidate_password = candidate_password or None
-        return _open_compare(baseline_path, candidate_path, config, job_id)
-    except HTTPException:
-        raise
-    except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
-        raise HTTPException(422, str(exc) or "Invalid or corrupt PDF") from exc
-    except Exception as exc:
-        raise HTTPException(500, "Assert diff failed") from exc
+    config = _parse_opts(dpi, tolerance, threshold)
+    config.baseline_password = baseline_password or None
+    config.candidate_password = candidate_password or None
+    return _handle_compare(baseline, candidate, config, "Assert diff failed")
 
 
 @app.post("/v1/baselines")

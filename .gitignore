@@ -20,6 +20,8 @@ venv/
 .vscode/
 *.local.md
 *.tsbuildinfo
+test-results/
+playwright-report/
 
 # Legacy local-only planning copies (uploaded duplicates)
 uploads/

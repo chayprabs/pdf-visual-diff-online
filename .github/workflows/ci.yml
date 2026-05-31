@@ -12,8 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -37,7 +35,10 @@ jobs:
       - name: Install worker deps
         run: pip install -r apps/worker/requirements.txt
       - name: Run worker tests
-        run: cd apps/worker && pytest -q
+        working-directory: apps/worker
+        env:
+          PYTHONPATH: .
+        run: pytest -q
 
   docker:
     runs-on: ubuntu-latest

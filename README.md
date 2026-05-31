@@ -96,9 +96,20 @@ See [.env.example](.env.example).
 
 `/pdf-compare`, `/pdf-visual-diff`, `/pdf-text-diff`, `/pdf-signature-check`, `/pdf-regression-test` — each exposes the playground with route-specific copy.
 
+## Legal
+
+| Document | Location |
+|----------|----------|
+| Terms of Service | [legal/terms.md](legal/terms.md) (web: `/terms`) |
+| Privacy Policy | [legal/privacy.md](legal/privacy.md) |
+| Disclaimer | [legal/disclaimer.md](legal/disclaimer.md) |
+| Software license | [LICENSE](LICENSE) (GNU **AGPL-3.0**) |
+
+Hosted use is subject to Terms and Privacy. Software is provided **without warranty** under the AGPL. Output is **not** legal or compliance advice.
+
 ## License
 
-AGPL-3.0 — see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 — see [LICENSE](LICENSE) and https://www.gnu.org/licenses/agpl-3.0.html.
 
 ## Links
 

@@ -8,6 +8,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "",
     "/privacy",
     "/terms",
+    "/license",
     "/pdf-compare",
     "/pdf-visual-diff",
     "/pdf-text-diff",

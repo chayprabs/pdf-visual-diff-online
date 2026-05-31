@@ -3,15 +3,33 @@ Version 3, 19 November 2007
 
 Copyright (C) 2026 Chaitanya Prabuddha
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Affero General Public License for more details.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
-You should have received a copy of the GNU Affero General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU Affero General Public License along with
+this program. If not, see https://www.gnu.org/licenses/agpl-3.0.html.
+
+---
+
+Additional notices
+
+1. Hosted service
+   Use of a public website or API operated by a third party may be subject to
+   separate Terms of Service and Privacy Policy. See the legal/ directory and
+   /terms, /privacy, /license on the web app.
+
+2. No professional advice
+   PdfDiff output is informational only. It is not legal, regulatory, compliance,
+   financial, or security advice. See legal/disclaimer.md.
+
+3. Full license text
+   The complete AGPL-3.0 legal text is available at:
+   https://www.gnu.org/licenses/agpl-3.0.txt
+
+   For compliance when distributing this software, include or link to the full
+   license text as required by the AGPL.

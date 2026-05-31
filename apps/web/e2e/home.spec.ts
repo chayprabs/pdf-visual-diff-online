@@ -28,12 +28,15 @@ test("seo landing routes load", async ({ page }) => {
   }
 });
 
-test("footer links to privacy and terms", async ({ page }) => {
+test("footer links to privacy, terms, and license", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Terms/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Terms of Service/i })).toBeVisible();
+  await expect(page.getByRole("link", { name: /License/i })).toBeVisible();
   await page.goto("/privacy");
   await expect(page.getByRole("heading", { name: /Privacy Policy/i })).toBeVisible();
   await page.goto("/terms");
-  await expect(page.getByRole("heading", { name: /Terms/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Terms of Service/i })).toBeVisible();
+  await page.goto("/license");
+  await expect(page.getByRole("heading", { name: /License/i })).toBeVisible();
 });

@@ -319,6 +319,23 @@ export function PdfDiffPlayground() {
         </div>
       </div>
 
+      <p className="mt-3 text-xs leading-relaxed text-[var(--muted)]">
+        By uploading or comparing PDFs, you confirm you have the right to process them and agree to
+        our{" "}
+        <a href="/terms" className="text-[var(--accent)] underline hover:no-underline">
+          Terms of Service
+        </a>
+        ,{" "}
+        <a href="/privacy" className="text-[var(--accent)] underline hover:no-underline">
+          Privacy Policy
+        </a>
+        , and{" "}
+        <a href="/license" className="text-[var(--accent)] underline hover:no-underline">
+          License &amp; Disclaimer
+        </a>
+        . Results are informational only—not legal, compliance, or signature-validity advice.
+      </p>
+
       {error && (
         <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}

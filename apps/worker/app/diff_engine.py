@@ -12,6 +12,7 @@ from typing import Any
 import fitz  # PyMuPDF
 import numpy as np
 import pikepdf
+import pixelmatch
 from PIL import Image
 
 from app.models import (
@@ -29,6 +30,8 @@ class DiffConfig:
     tolerance: int = 12
     threshold: float | None = None
     job_dir: Path | None = None
+    baseline_password: str | None = None
+    candidate_password: str | None = None
 
 
 def _render_page(doc: fitz.Document, page_num: int, dpi: int) -> Image.Image:
@@ -41,26 +44,38 @@ def _render_page(doc: fitz.Document, page_num: int, dpi: int) -> Image.Image:
 
 def _pixel_diff_pct(
     img_a: Image.Image, img_b: Image.Image, tolerance: int
-) -> tuple[float, Image.Image, list[tuple[float, float, float, float]]]:
-    if img_a.size != img_b.size:
+) -> tuple[float, Image.Image, list[tuple[float, float, float, float]], bool]:
+    size_mismatch = img_a.size != img_b.size
+    if size_mismatch:
         img_b = img_b.resize(img_a.size, Image.Resampling.LANCZOS)
-    a = np.array(img_a.convert("RGB"), dtype=np.int16)
-    b = np.array(img_b.convert("RGB"), dtype=np.int16)
-    diff = np.abs(a - b).max(axis=2)
-    mask = diff > tolerance
-    pct = float(mask.mean() * 100.0)
-    mask_img = Image.new("RGB", img_a.size, (255, 255, 255))
-    overlay = Image.new("RGB", img_a.size, (255, 0, 0))
-    mask_arr = np.array(mask_img)
-    mask_arr[mask] = [255, 0, 0]
-    mask_img = Image.fromarray(mask_arr.astype(np.uint8))
+    w, h = img_a.size
+    arr_a = np.array(img_a.convert("RGBA"), dtype=np.uint8)
+    arr_b = np.array(img_b.convert("RGBA"), dtype=np.uint8)
+    flat_a = arr_a.flatten().tolist()
+    flat_b = arr_b.flatten().tolist()
+    out = [0] * (w * h * 4)
+    pm_threshold = max(0.01, min(1.0, tolerance / 100.0))
+    mismatched = pixelmatch.pixelmatch(
+        flat_a,
+        flat_b,
+        w,
+        h,
+        output=out,
+        threshold=pm_threshold,
+        includeAA=tolerance < 5,
+    )
+    pct = (mismatched / (w * h)) * 100.0 if w * h else 0.0
+    mask_img = Image.frombytes("RGBA", (w, h), bytes(out)).convert("RGB")
     bboxes: list[tuple[float, float, float, float]] = []
-    if mask.any():
-        ys, xs = np.where(mask)
-        bboxes.append(
-            (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
-        )
-    return pct, mask_img, bboxes
+    if mismatched > 0:
+        arr = np.array(mask_img)
+        red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 80)
+        if red.any():
+            ys, xs = np.where(red)
+            bboxes.append(
+                (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
+            )
+    return pct, mask_img, bboxes, size_mismatch
 
 
 def _extract_text_blocks(doc: fitz.Document, page_num: int) -> list[dict[str, Any]]:
@@ -153,9 +168,43 @@ def _metadata_diff(
     return diff
 
 
-def _get_metadata(doc: fitz.Document) -> dict[str, Any]:
+def _get_xmp(path: Path, password: str | None = None) -> str | None:
+    try:
+        with pikepdf.open(path, password=password or "") as pdf:
+            with pdf.open_metadata() as meta:
+                return meta.dumps() if meta else None
+    except Exception:
+        return None
+
+
+def _get_metadata(doc: fitz.Document, pdf_path: Path | None = None, password: str | None = None) -> dict[str, Any]:
     m = doc.metadata or {}
-    return {k: v for k, v in m.items() if v}
+    result = {k: v for k, v in m.items() if v}
+    if pdf_path:
+        xmp = _get_xmp(pdf_path, password)
+        if xmp:
+            result["xmp"] = xmp[:2000]
+    return result
+
+
+def _image_xrefs(path: Path, password: str | None = None) -> set[str]:
+    refs: set[str] = set()
+    try:
+        with pikepdf.open(path, password=password or "") as pdf:
+            for i, page in enumerate(pdf.pages):
+                resources = page.get("/Resources", {})
+                xobj = resources.get("/XObject", {})
+                if xobj:
+                    for name, ref in xobj.items():
+                        try:
+                            subtype = str(ref.get("/Subtype", ""))
+                            if subtype == "/Image":
+                                refs.add(f"page{i + 1}:{name}")
+                        except Exception:
+                            continue
+    except Exception:
+        pass
+    return refs
 
 
 def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
@@ -248,20 +297,35 @@ def _signature_info(path: Path) -> SignatureInfo:
     return SignatureInfo(present=False, details="No signature detected")
 
 
-def _font_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
+def _resource_diff(
+    path_a: Path,
+    path_b: Path,
+    pwd_a: str | None = None,
+    pwd_b: str | None = None,
+) -> dict[str, Any]:
     fonts_a: set[str] = set()
     fonts_b: set[str] = set()
-    for path, target in ((path_a, fonts_a), (path_b, fonts_b)):
+    for path, target, pwd in ((path_a, fonts_a, pwd_a), (path_b, fonts_b, pwd_b)):
         doc = fitz.open(path)
+        if pwd:
+            doc.authenticate(pwd)
         try:
             for i in range(len(doc)):
                 for f in doc[i].get_fonts():
                     target.add(f[3] if len(f) > 3 else str(f))
         finally:
             doc.close()
+    images_a = _image_xrefs(path_a, pwd_a)
+    images_b = _image_xrefs(path_b, pwd_b)
     return {
-        "added": sorted(fonts_b - fonts_a),
-        "removed": sorted(fonts_a - fonts_b),
+        "fonts": {
+            "added": sorted(fonts_b - fonts_a),
+            "removed": sorted(fonts_a - fonts_b),
+        },
+        "images": {
+            "added": sorted(images_b - images_a),
+            "removed": sorted(images_a - images_b),
+        },
     }
 
 
@@ -341,6 +405,12 @@ def compare_pdfs(
 
     doc_a = fitz.open(baseline_path)
     doc_b = fitz.open(candidate_path)
+    if config.baseline_password:
+        if not doc_a.authenticate(config.baseline_password):
+            raise ValueError("Incorrect baseline PDF password")
+    if config.candidate_password:
+        if not doc_b.authenticate(config.candidate_password):
+            raise ValueError("Incorrect candidate PDF password")
     page_count = max(len(doc_a), len(doc_b))
     pages: list[PageDiff] = []
     mask_paths: list[Path] = []
@@ -358,9 +428,17 @@ def compare_pdfs(
             if pn < len(doc_a) and pn < len(doc_b):
                 img_a = _render_page(doc_a, pn, config.dpi)
                 img_b = _render_page(doc_b, pn, config.dpi)
-                pixel_pct, mask_img, bboxes = _pixel_diff_pct(
+                pixel_pct, mask_img, bboxes, size_mismatch = _pixel_diff_pct(
                     img_a, img_b, config.tolerance
                 )
+                if size_mismatch:
+                    changes.append(
+                        PageChange(
+                            kind="image",
+                            bbox=(0, 0, float(img_a.width), float(img_a.height)),
+                            description="Page dimensions differ between baseline and candidate",
+                        )
+                    )
                 mask_path = job_dir / f"mask-page-{page_num}.png"
                 mask_img.save(mask_path)
                 mask_paths.append(mask_path)
@@ -414,11 +492,16 @@ def compare_pdfs(
                 )
             )
 
-        meta_a = _get_metadata(doc_a)
-        meta_b = _get_metadata(doc_b)
+        meta_a = _get_metadata(doc_a, baseline_path, config.baseline_password)
+        meta_b = _get_metadata(doc_b, candidate_path, config.candidate_password)
         meta_diff = _metadata_diff(meta_a, meta_b)
         obj_diff = _object_diff(baseline_path, candidate_path)
-        font_diff = _font_diff(baseline_path, candidate_path)
+        font_diff = _resource_diff(
+            baseline_path,
+            candidate_path,
+            config.baseline_password,
+            config.candidate_password,
+        )
         sig = {
             "baseline": _signature_info(baseline_path),
             "candidate": _signature_info(candidate_path),

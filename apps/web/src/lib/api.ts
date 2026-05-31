@@ -7,6 +7,9 @@ export interface DiffRequestOptions {
   tolerance?: number;
   threshold?: number;
   mode?: "diff" | "assert";
+  baselinePassword?: string;
+  candidatePassword?: string;
+  signal?: AbortSignal;
 }
 
 export async function runDiff(
@@ -19,6 +22,8 @@ export async function runDiff(
   form.append("candidate", candidate);
   form.append("dpi", String(options.dpi ?? 150));
   form.append("tolerance", String(options.tolerance ?? 12));
+  if (options.baselinePassword) form.append("baseline_password", options.baselinePassword);
+  if (options.candidatePassword) form.append("candidate_password", options.candidatePassword);
 
   const endpoint = options.mode === "assert" ? "/v1/assert" : "/v1/diff";
   if (options.mode === "assert") {
@@ -28,6 +33,7 @@ export async function runDiff(
   const res = await fetch(`${API_BASE}${endpoint}`, {
     method: "POST",
     body: form,
+    signal: options.signal,
   });
 
   if (!res.ok) {

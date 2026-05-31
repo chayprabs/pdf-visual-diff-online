@@ -40,17 +40,19 @@ def test_a2_report_drift_detected():
     assert any(p.pixelDiffPct > 0 or p.changes for p in result.pages)
 
 
-def test_a2_signature_flag_when_baseline_has_flags():
-    """Signature detection flags missing candidate signatures when baseline indicates signing."""
+def test_a2_signature_removed_fixture_flagged():
+    """PRD A2: signature present in baseline but missing in candidate is flagged."""
+    signed_base = SAMPLES / "signed-baseline.pdf"
+    signed_cand = SAMPLES / "signed-candidate-unsigned.pdf"
+    if not signed_base.exists():
+        subprocess.run([sys.executable, str(ROOT / "scripts" / "generate_samples.py")], check=True)
     config = DiffConfig(job_dir=SAMPLES / ".job-a2b")
-    result = compare_pdfs(
-        SAMPLES / "contract-v1.pdf",
-        SAMPLES / "contract-v2.pdf",
-        config,
+    result = compare_pdfs(signed_base, signed_cand, config)
+    assert result.signatures["baseline"].present
+    assert not result.signatures["candidate"].present
+    assert "signature" in result.summary.lower() or (
+        result.objectDiff and result.objectDiff.get("signatures")
     )
-    sig_diff = result.objectDiff or {}
-    sig_entries = sig_diff.get("signatures", [])
-    assert result.summary or sig_entries or result.signatures
 
 
 def test_a3_assert_threshold():

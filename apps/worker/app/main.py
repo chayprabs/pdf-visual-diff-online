@@ -95,12 +95,24 @@ def _serialize_result(result: DiffResult, job_id: str) -> dict:
     return data
 
 
+def _open_compare(
+    baseline_path: Path,
+    candidate_path: Path,
+    config: DiffConfig,
+    job_id: str,
+) -> JSONResponse:
+    result = compare_pdfs(baseline_path, candidate_path, config)
+    return JSONResponse(_serialize_result(result, job_id))
+
+
 @app.post("/v1/diff")
 async def diff_endpoint(
     baseline: UploadFile = File(...),
     candidate: UploadFile = File(...),
     dpi: int = Form(150),
     tolerance: int = Form(12),
+    baseline_password: str = Form(""),
+    candidate_password: str = Form(""),
 ):
     _cleanup_stale_jobs()
     job_id = uuid.uuid4().hex
@@ -113,12 +125,13 @@ async def diff_endpoint(
         _save_upload(candidate, candidate_path)
         config = _parse_opts(dpi, tolerance, None)
         config.job_dir = job_dir
-        result = compare_pdfs(baseline_path, candidate_path, config)
-        return JSONResponse(_serialize_result(result, job_id))
+        config.baseline_password = baseline_password or None
+        config.candidate_password = candidate_password or None
+        return _open_compare(baseline_path, candidate_path, config, job_id)
     except HTTPException:
         raise
     except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
-        raise HTTPException(422, "Invalid or corrupt PDF") from exc
+        raise HTTPException(422, str(exc) or "Invalid or corrupt PDF") from exc
     except Exception as exc:
         raise HTTPException(500, "Diff failed") from exc
 
@@ -130,6 +143,8 @@ async def assert_endpoint(
     dpi: int = Form(150),
     tolerance: int = Form(12),
     threshold: float = Form(0.5),
+    baseline_password: str = Form(""),
+    candidate_password: str = Form(""),
 ):
     _cleanup_stale_jobs()
     job_id = uuid.uuid4().hex
@@ -142,14 +157,48 @@ async def assert_endpoint(
         _save_upload(candidate, candidate_path)
         config = _parse_opts(dpi, tolerance, threshold)
         config.job_dir = job_dir
-        result = compare_pdfs(baseline_path, candidate_path, config)
-        return JSONResponse(_serialize_result(result, job_id))
+        config.baseline_password = baseline_password or None
+        config.candidate_password = candidate_password or None
+        return _open_compare(baseline_path, candidate_path, config, job_id)
     except HTTPException:
         raise
     except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
-        raise HTTPException(422, "Invalid or corrupt PDF") from exc
+        raise HTTPException(422, str(exc) or "Invalid or corrupt PDF") from exc
     except Exception as exc:
         raise HTTPException(500, "Assert diff failed") from exc
+
+
+@app.post("/v1/baselines")
+async def save_baseline(
+    baseline: UploadFile = File(...),
+    repo: str = Form(...),
+    branch: str = Form("main"),
+):
+    """Pro feature: persist baseline PDFs per repo/branch (requires BASELINES_DIR)."""
+    baselines_dir = os.environ.get("BASELINES_DIR")
+    if not baselines_dir:
+        raise HTTPException(
+            501,
+            "Baseline storage not enabled. Set BASELINES_DIR on the worker to enable Pro baselines.",
+        )
+    safe_repo = "".join(c if c.isalnum() or c in "-_/" else "_" for c in repo)
+    dest_dir = Path(baselines_dir) / safe_repo / branch
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / "baseline.pdf"
+    _save_upload(baseline, dest)
+    return {"saved": True, "path": str(dest)}
+
+
+@app.get("/v1/baselines/{repo}/{branch}")
+def get_baseline(repo: str, branch: str = "main"):
+    baselines_dir = os.environ.get("BASELINES_DIR")
+    if not baselines_dir:
+        raise HTTPException(501, "Baseline storage not enabled")
+    safe_repo = "".join(c if c.isalnum() or c in "-_/" else "_" for c in repo)
+    path = Path(baselines_dir) / safe_repo / branch / "baseline.pdf"
+    if not path.exists():
+        raise HTTPException(404, "Baseline not found")
+    return FileResponse(path, headers={"Cache-Control": "private, no-store"})
 
 
 @app.get("/v1/artifacts/{job_id}/{filename}")

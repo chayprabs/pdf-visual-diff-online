@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#fafafa"/>
+  <rect x="0" y="0" width="1200" height="56" fill="#ffffff" stroke="#e5e5e5"/>
+  <text x="32" y="36" font-family="system-ui,sans-serif" font-size="20" font-weight="600" fill="#171717">PdfDiff</text>
+  <rect x="0" y="56" width="1200" height="72" fill="#f5f5f5"/>
+  <text x="32" y="92" font-family="system-ui,sans-serif" font-size="14" fill="#737373">Compare two PDFs visually and structurally</text>
+  <rect x="32" y="160" width="540" height="200" rx="12" fill="#ffffff" stroke="#e5e5e5" stroke-dasharray="8 4"/>
+  <text x="302" y="250" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#737373">Baseline PDF</text>
+  <rect x="628" y="160" width="540" height="200" rx="12" fill="#ffffff" stroke="#e5e5e5" stroke-dasharray="8 4"/>
+  <text x="898" y="250" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#737373">Candidate PDF</text>
+  <rect x="900" y="400" width="268" height="44" rx="8" fill="#2563eb"/>
+  <text x="1034" y="428" text-anchor="middle" font-family="system-ui,sans-serif" font-size="15" fill="#ffffff">Compare PDFs</text>
+</svg>

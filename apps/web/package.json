@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@pdf-diff/shared-types": "workspace:*",
@@ -27,6 +28,7 @@
     "eslint-config-next": "^15.1.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "@playwright/test": "^1.49.0"
   }
 }

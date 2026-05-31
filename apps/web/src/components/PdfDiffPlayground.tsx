@@ -1,14 +1,19 @@
 "use client";
 
 import type { DiffResult, PageDiff } from "@pdf-diff/shared-types";
-import { Download, FileUp, Loader2 } from "lucide-react";
-import { useCallback, useState } from "react";
+import { BboxOverlay } from "@/components/BboxOverlay";
+import { DiffDrawer } from "@/components/DiffDrawer";
+import { Download, FileUp, Loader2, X } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { artifactUrl, runDiff } from "@/lib/api";
+
+const MAX_MB = 50;
 
 type ViewMode = "baseline" | "candidate" | "overlay" | "mask" | "summary";
 
 const SAMPLES = [
   { name: "Contract v1 vs v2", baseline: "/samples/contract-v1.pdf", candidate: "/samples/contract-v2.pdf" },
+  { name: "Signature removed", baseline: "/samples/signed-baseline.pdf", candidate: "/samples/signed-candidate-unsigned.pdf" },
   { name: "Report drift", baseline: "/samples/report-baseline.pdf", candidate: "/samples/report-drift.pdf" },
   { name: "Layout change", baseline: "/samples/layout-a.pdf", candidate: "/samples/layout-b.pdf" },
 ] as const;
@@ -103,11 +108,14 @@ export function PdfDiffPlayground() {
   const [tolerance, setTolerance] = useState(12);
   const [threshold, setThreshold] = useState(0.5);
   const [assertMode, setAssertMode] = useState(false);
+  const [baselinePassword, setBaselinePassword] = useState("");
+  const [candidatePassword, setCandidatePassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DiffResult | null>(null);
   const [selectedPage, setSelectedPage] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>("summary");
+  const abortRef = useRef<AbortController | null>(null);
 
   const loadSample = async (baselineUrl: string, candidateUrl: string) => {
     const [bRes, cRes] = await Promise.all([fetch(baselineUrl), fetch(candidateUrl)]);
@@ -118,11 +126,22 @@ export function PdfDiffPlayground() {
     setError(null);
   };
 
+  const cancel = () => {
+    abortRef.current?.abort();
+    setLoading(false);
+  };
+
   const run = useCallback(async () => {
     if (!baseline || !candidate) {
       setError("Please upload both PDF files.");
       return;
     }
+    if (baseline.size > MAX_MB * 1024 * 1024 || candidate.size > MAX_MB * 1024 * 1024) {
+      setError(`Each PDF must be under ${MAX_MB}MB.`);
+      return;
+    }
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
     setLoading(true);
     setError(null);
     setResult(null);
@@ -132,15 +151,19 @@ export function PdfDiffPlayground() {
         tolerance,
         threshold,
         mode: assertMode ? "assert" : "diff",
+        baselinePassword: baselinePassword || undefined,
+        candidatePassword: candidatePassword || undefined,
+        signal: abortRef.current.signal,
       });
       setResult(data);
       setSelectedPage(data.pages[0]?.page ?? 1);
     } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Comparison failed");
     } finally {
       setLoading(false);
     }
-  }, [baseline, candidate, dpi, tolerance, threshold, assertMode]);
+  }, [baseline, candidate, dpi, tolerance, threshold, assertMode, baselinePassword, candidatePassword]);
 
   const currentPage = result?.pages.find((p) => p.page === selectedPage);
 
@@ -209,22 +232,56 @@ export function PdfDiffPlayground() {
             />
           </label>
         )}
-        <button
-          type="button"
-          onClick={run}
-          disabled={loading}
-          aria-busy={loading}
-          className="ml-auto flex items-center gap-2 rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Comparing…
-            </>
-          ) : (
-            "Compare PDFs"
+        <label className="flex flex-col gap-1 text-sm">
+          Baseline password
+          <input
+            type="password"
+            value={baselinePassword}
+            onChange={(e) => setBaselinePassword(e.target.value)}
+            placeholder="Optional"
+            className="w-36 rounded border border-[var(--border)] px-2 py-1"
+            autoComplete="off"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Candidate password
+          <input
+            type="password"
+            value={candidatePassword}
+            onChange={(e) => setCandidatePassword(e.target.value)}
+            placeholder="Optional"
+            className="w-36 rounded border border-[var(--border)] px-2 py-1"
+            autoComplete="off"
+          />
+        </label>
+        <div className="ml-auto flex gap-2">
+          {loading && (
+            <button
+              type="button"
+              onClick={cancel}
+              className="flex items-center gap-1 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm hover:bg-[#f5f5f5]"
+            >
+              <X className="h-4 w-4" />
+              Cancel
+            </button>
           )}
-        </button>
+          <button
+            type="button"
+            onClick={run}
+            disabled={loading}
+            aria-busy={loading}
+            className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Comparing…
+              </>
+            ) : (
+              "Compare PDFs"
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -248,10 +305,6 @@ export function PdfDiffPlayground() {
               {result.assertion.threshold}%)
             </div>
           )}
-
-          <p className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4 text-sm leading-relaxed">
-            {result.summary}
-          </p>
 
           {result.bundleUrl && (
             <a
@@ -295,7 +348,7 @@ export function PdfDiffPlayground() {
           </div>
 
           {currentPage && (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                 <h3 className="mb-3 text-sm font-medium">Page {currentPage.page}</h3>
                 {viewMode === "baseline" && currentPage.baselineUrl && (
@@ -314,12 +367,18 @@ export function PdfDiffPlayground() {
                   <div className="relative max-h-96">
                     {currentPage.baselineUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={artifactUrl(currentPage.baselineUrl)} alt="" className="w-full object-contain" />
+                      <img
+                        id={`page-img-${currentPage.page}`}
+                        src={artifactUrl(currentPage.baselineUrl)}
+                        alt=""
+                        className="w-full object-contain"
+                      />
                     )}
                     {currentPage.maskUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={artifactUrl(currentPage.maskUrl)} alt={`Overlay page ${currentPage.page}`} className="absolute inset-0 w-full object-contain opacity-60 mix-blend-multiply" />
                     )}
+                    <BboxOverlay changes={currentPage.changes} imageWidth={800} imageHeight={1100} />
                   </div>
                 )}
                 {(viewMode === "mask" || viewMode === "overlay" || viewMode === "baseline" || viewMode === "candidate") &&
@@ -343,21 +402,7 @@ export function PdfDiffPlayground() {
                   </ul>
                 )}
               </div>
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <h3 className="mb-3 text-sm font-medium">Object &amp; metadata</h3>
-                <pre className="max-h-96 overflow-auto text-xs text-[var(--muted)]">
-                  {JSON.stringify(
-                    {
-                      signatures: result.signatures,
-                      metadataDiff: result.metadataDiff,
-                      objectDiff: result.objectDiff,
-                      fontDiff: result.fontDiff,
-                    },
-                    null,
-                    2,
-                  )}
-                </pre>
-              </div>
+              <DiffDrawer result={result} />
             </div>
           )}
         </div>

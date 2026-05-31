@@ -1,6 +1,5 @@
 import { Footer } from "@/components/Footer";
 import { PdfDiffPlayground } from "@/components/PdfDiffPlayground";
-import { SeoBar } from "@/components/SeoBar";
 import { TopBar } from "@/components/TopBar";
 
 export function SeoLanding({ title, subtitle }: { title: string; subtitle: string }) {

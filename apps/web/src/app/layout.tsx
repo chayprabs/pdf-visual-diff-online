@@ -28,6 +28,16 @@ export const metadata: Metadata = {
   },
 };
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "PdfDiff",
+  applicationCategory: "UtilitiesApplication",
+  operatingSystem: "Any",
+  description: siteDescription,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -35,7 +45,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

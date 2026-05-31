@@ -1,0 +1,19 @@
+{
+  "name": "pdf-visual-diff-online",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compare PDFs visually and structurally online",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "dev": "pnpm --filter @pdf-diff/web dev",
+    "dev:worker": "echo 'Run worker via docker compose or apps/worker'"
+  }
+}

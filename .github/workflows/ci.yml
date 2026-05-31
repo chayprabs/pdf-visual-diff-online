@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - run: pnpm --filter @pdf-diff/shared-types build
+      - run: pnpm --filter @pdf-diff/shared-types test
+      - run: pnpm --filter @pdf-diff/web typecheck
+      - run: pnpm --filter @pdf-diff/web lint
+      - run: pnpm --filter @pdf-diff/web build
+        env:
+          WORKER_URL: http://localhost:8000
+
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install worker deps
+        run: pip install -r apps/worker/requirements.txt
+      - name: Run worker tests
+        run: cd apps/worker && pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose
+        run: docker compose config
+      - name: Build worker image
+        run: docker compose build worker

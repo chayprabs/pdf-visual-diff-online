@@ -1,0 +1,35 @@
+import type { Metadata } from "next";
+import "./globals.css";
+
+const siteDescription =
+  "Compare PDFs visually and structurally online — per-page masks, text and object diffs, signature checks and human-readable summaries.";
+
+export const metadata: Metadata = {
+  title: "PdfDiff — Compare PDFs Online",
+  description: siteDescription,
+  keywords: [
+    "pdf",
+    "pdf-diff",
+    "pdf-compare",
+    "visual-diff",
+    "pdf-tools",
+    "document-comparison",
+  ],
+  openGraph: {
+    title: "PdfDiff — Compare PDFs Online",
+    description: siteDescription,
+    type: "website",
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    <html lang="en">
+      <body className="antialiased">{children}</body>
+    </html>
+  );
+}

@@ -1,0 +1,3 @@
+# Single-machine self-host: worker + web
+include:
+  - path: docker-compose.yml

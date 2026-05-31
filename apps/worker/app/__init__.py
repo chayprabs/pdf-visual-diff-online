@@ -1,0 +1,1 @@
+"""PdfDiff worker application."""

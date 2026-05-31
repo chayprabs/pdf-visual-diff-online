@@ -1,12 +1,24 @@
-# Local planning documents intentionally kept out of GitHub
-PRODUCT_REQUIREMENTS.md
-IMPLEMENTATION_HANDOFF.md
-CODEX_GOAL_PROMPT.md
-RELEASE_QUALIFICATION_CHECKLIST.md
+node_modules/
+.pnpm-store/
+dist/
+.next/
+out/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+*.egg-info/
+.DS_Store
+.idea/
+.vscode/
+*.local.md
 
-# Legacy planning document names
-AGENT_HANDOFF.md
-CODEX_GOLD_PROMPTS.md
-CODEX_GOAL_PROMPTS.md
-QUALIFYING_CRITERIA.md
-[0-3][0-9]_*.md
+# Legacy local-only planning copies (uploaded duplicates)
+uploads/

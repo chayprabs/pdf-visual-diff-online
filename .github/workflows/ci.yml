@@ -54,7 +54,7 @@ jobs:
           WORKER_URL: http://127.0.0.1:8000
       - run: npx playwright install chromium --with-deps
         working-directory: apps/web
-      - run: sleep 5 && pnpm --filter @pdf-diff/web test:e2e
+      - run: sleep 12 && pnpm --filter @pdf-diff/web test:e2e
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
           CI: "true"

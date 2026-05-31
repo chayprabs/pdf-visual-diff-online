@@ -5,7 +5,13 @@ import { Download, FileUp, Loader2 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { artifactUrl, runDiff } from "@/lib/api";
 
-type ViewMode = "overlay" | "mask" | "summary";
+type ViewMode = "baseline" | "candidate" | "overlay" | "mask" | "summary";
+
+const SAMPLES = [
+  { name: "Contract v1 vs v2", baseline: "/samples/contract-v1.pdf", candidate: "/samples/contract-v2.pdf" },
+  { name: "Report drift", baseline: "/samples/report-baseline.pdf", candidate: "/samples/report-drift.pdf" },
+  { name: "Layout change", baseline: "/samples/layout-a.pdf", candidate: "/samples/layout-b.pdf" },
+] as const;
 
 function FileSlot({
   label,
@@ -16,24 +22,40 @@ function FileSlot({
   file: File | null;
   onFile: (f: File | null) => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
+
+  const acceptFile = (f: File | undefined) => {
+    if (f && f.type === "application/pdf") onFile(f);
+  };
+
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    onFile(f ?? null);
+    acceptFile(e.target.files?.[0]);
   };
 
   return (
-    <label className="flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-[var(--border)] bg-[var(--surface)] px-4 py-10 transition hover:border-[var(--accent)] hover:bg-[#f8faff]">
+    <label
+      className={`flex flex-1 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-4 py-10 transition ${
+        dragOver
+          ? "border-[var(--accent)] bg-[#eff6ff]"
+          : "border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent)] hover:bg-[#f8faff]"
+      }`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        acceptFile(e.dataTransfer.files[0]);
+      }}
+    >
       <FileUp className="mb-3 h-8 w-8 text-[var(--muted)]" />
       <span className="text-sm font-medium">{label}</span>
       <span className="mt-1 text-xs text-[var(--muted)]">
         {file ? file.name : "Click or drop PDF"}
       </span>
-      <input
-        type="file"
-        accept="application/pdf"
-        className="hidden"
-        onChange={onChange}
-      />
+      <input type="file" accept="application/pdf" className="hidden" onChange={onChange} />
     </label>
   );
 }
@@ -52,6 +74,7 @@ function PageThumbnail({
     <button
       type="button"
       onClick={onSelect}
+      aria-current={selected ? "true" : undefined}
       className={`relative rounded-lg border px-3 py-2 text-left text-sm transition ${
         selected
           ? "border-[var(--accent)] bg-[#eff6ff]"
@@ -86,6 +109,15 @@ export function PdfDiffPlayground() {
   const [selectedPage, setSelectedPage] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>("summary");
 
+  const loadSample = async (baselineUrl: string, candidateUrl: string) => {
+    const [bRes, cRes] = await Promise.all([fetch(baselineUrl), fetch(candidateUrl)]);
+    const bBlob = await bRes.blob();
+    const cBlob = await cRes.blob();
+    setBaseline(new File([bBlob], baselineUrl.split("/").pop() || "baseline.pdf", { type: "application/pdf" }));
+    setCandidate(new File([cBlob], candidateUrl.split("/").pop() || "candidate.pdf", { type: "application/pdf" }));
+    setError(null);
+  };
+
   const run = useCallback(async () => {
     if (!baseline || !candidate) {
       setError("Please upload both PDF files.");
@@ -114,6 +146,19 @@ export function PdfDiffPlayground() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      <h1 className="sr-only">Compare PDFs online</h1>
+      <div className="mb-4 flex flex-wrap gap-2">
+        {SAMPLES.map((s) => (
+          <button
+            key={s.name}
+            type="button"
+            onClick={() => loadSample(s.baseline, s.candidate)}
+            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--foreground)]"
+          >
+            Sample: {s.name}
+          </button>
+        ))}
+      </div>
       <div className="flex flex-col gap-4 sm:flex-row">
         <FileSlot label="Baseline PDF" file={baseline} onFile={setBaseline} />
         <FileSlot label="Candidate PDF" file={candidate} onFile={setCandidate} />
@@ -168,6 +213,7 @@ export function PdfDiffPlayground() {
           type="button"
           onClick={run}
           disabled={loading}
+          aria-busy={loading}
           className="ml-auto flex items-center gap-2 rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
         >
           {loading ? (
@@ -182,7 +228,7 @@ export function PdfDiffPlayground() {
       </div>
 
       {error && (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           {error}
         </p>
       )}
@@ -229,11 +275,13 @@ export function PdfDiffPlayground() {
             ))}
           </div>
 
-          <div className="flex gap-2 border-b border-[var(--border)] pb-2">
-            {(["summary", "mask", "overlay"] as ViewMode[]).map((m) => (
+          <div className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-2" role="tablist" aria-label="Page view mode">
+            {(["summary", "baseline", "candidate", "mask", "overlay"] as ViewMode[]).map((m) => (
               <button
                 key={m}
                 type="button"
+                role="tab"
+                aria-selected={viewMode === m}
                 onClick={() => setViewMode(m)}
                 className={`rounded px-3 py-1 text-sm capitalize ${
                   viewMode === m
@@ -250,22 +298,36 @@ export function PdfDiffPlayground() {
             <div className="grid gap-4 lg:grid-cols-2">
               <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
                 <h3 className="mb-3 text-sm font-medium">Page {currentPage.page}</h3>
+                {viewMode === "baseline" && currentPage.baselineUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={artifactUrl(currentPage.baselineUrl)} alt={`Baseline page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
+                )}
+                {viewMode === "candidate" && currentPage.candidateUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={artifactUrl(currentPage.candidateUrl)} alt={`Candidate page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
+                )}
                 {viewMode === "mask" && currentPage.maskUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={artifactUrl(currentPage.maskUrl)}
-                    alt={`Mask page ${currentPage.page}`}
-                    className="max-h-96 w-full object-contain"
-                  />
+                  <img src={artifactUrl(currentPage.maskUrl)} alt={`Mask page ${currentPage.page}`} className="max-h-96 w-full object-contain" />
                 )}
-                {viewMode === "overlay" && currentPage.maskUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={artifactUrl(currentPage.maskUrl)}
-                    alt={`Overlay page ${currentPage.page}`}
-                    className="max-h-96 w-full object-contain opacity-90"
-                  />
+                {viewMode === "overlay" && (currentPage.baselineUrl || currentPage.maskUrl) && (
+                  <div className="relative max-h-96">
+                    {currentPage.baselineUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={artifactUrl(currentPage.baselineUrl)} alt="" className="w-full object-contain" />
+                    )}
+                    {currentPage.maskUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={artifactUrl(currentPage.maskUrl)} alt={`Overlay page ${currentPage.page}`} className="absolute inset-0 w-full object-contain opacity-60 mix-blend-multiply" />
+                    )}
+                  </div>
                 )}
+                {(viewMode === "mask" || viewMode === "overlay" || viewMode === "baseline" || viewMode === "candidate") &&
+                  !currentPage.maskUrl &&
+                  !currentPage.baselineUrl &&
+                  !currentPage.candidateUrl && (
+                    <p className="text-sm text-[var(--muted)]">No preview for this page.</p>
+                  )}
                 {viewMode === "summary" && (
                   <ul className="space-y-2 text-sm">
                     {currentPage.changes.length === 0 ? (

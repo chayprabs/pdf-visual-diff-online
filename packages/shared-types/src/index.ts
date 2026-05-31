@@ -11,6 +11,8 @@ export interface PageDiff {
   pixelDiffPct: number;
   changes: PageChange[];
   maskUrl?: string;
+  baselineUrl?: string;
+  candidateUrl?: string;
   compositeUrl?: string;
 }
 

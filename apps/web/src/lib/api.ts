@@ -45,5 +45,6 @@ export async function runDiff(
 export function artifactUrl(path: string | undefined): string | undefined {
   if (!path) return undefined;
   if (path.startsWith("http")) return path;
-  return `${API_BASE}${path.startsWith("/") ? path.slice(path.indexOf("/v1")) : path}`;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}${normalized}`;
 }

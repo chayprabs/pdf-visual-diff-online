@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 
-const base = process.env.NEXT_PUBLIC_SITE_URL || "https://github.com/chayprabs/pdf-visual-diff-online";
+const base =
+  process.env.NEXT_PUBLIC_SITE_URL || "https://pdf-visual-diff-online.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const routes = [

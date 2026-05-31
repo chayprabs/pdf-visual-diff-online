@@ -208,8 +208,14 @@ def _object_diff(path_a: Path, path_b: Path) -> dict[str, Any]:
                 result["annotations"].append(
                     {"page": pn + 1, "before": texts_a, "after": texts_b}
                 )
-        widgets_a = sum(1 for _ in doc_a[0].widgets() or []) if len(doc_a) else 0
-        widgets_b = sum(1 for _ in doc_b[0].widgets() or []) if len(doc_b) else 0
+        def widget_count(doc: fitz.Document) -> int:
+            total = 0
+            for pn in range(len(doc)):
+                total += sum(1 for _ in doc[pn].widgets() or [])
+            return total
+
+        widgets_a = widget_count(doc_a)
+        widgets_b = widget_count(doc_b)
         if widgets_a != widgets_b:
             result["formFields"].append(
                 {"change": "count", "before": widgets_a, "after": widgets_b}
@@ -283,6 +289,23 @@ def _build_summary(pages: list[PageDiff], meta_diff: dict, sig: dict[str, Signat
     return " ".join(lines)
 
 
+def _create_composite_pdf(job_dir: Path, mask_paths: list[Path]) -> Path:
+    composite = job_dir / "composite.pdf"
+    out = fitz.open()
+    for mp in mask_paths:
+        if mp.exists():
+            img = fitz.open(mp.as_posix())
+            rect = img[0].rect
+            page = out.new_page(width=rect.width, height=rect.height)
+            page.insert_image(rect, filename=mp.as_posix())
+            img.close()
+    if len(out) == 0:
+        out.new_page()
+    out.save(composite)
+    out.close()
+    return composite
+
+
 def _create_bundle(
     job_dir: Path,
     pages: list[PageDiff],
@@ -295,9 +318,12 @@ def _create_bundle(
         f"<html><body><h1>PdfDiff Report</h1><pre>{result_dict.get('summary', '')}</pre></body></html>",
         encoding="utf-8",
     )
+    composite = _create_composite_pdf(job_dir, mask_paths)
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("summary.json", json.dumps(result_dict, indent=2, default=str))
         zf.write(summary_html, "summary.html")
+        if composite.exists():
+            zf.write(composite, "composite.pdf")
         for mp in mask_paths:
             if mp.exists():
                 zf.write(mp, f"masks/{mp.name}")
@@ -326,6 +352,8 @@ def compare_pdfs(
             changes: list[PageChange] = []
             pixel_pct = 0.0
             mask_path: Path | None = None
+            baseline_png: Path | None = None
+            candidate_png: Path | None = None
 
             if pn < len(doc_a) and pn < len(doc_b):
                 img_a = _render_page(doc_a, pn, config.dpi)
@@ -336,6 +364,10 @@ def compare_pdfs(
                 mask_path = job_dir / f"mask-page-{page_num}.png"
                 mask_img.save(mask_path)
                 mask_paths.append(mask_path)
+                baseline_png = job_dir / f"baseline-page-{page_num}.png"
+                candidate_png = job_dir / f"candidate-page-{page_num}.png"
+                img_a.save(baseline_png)
+                img_b.save(candidate_png)
                 for bb in bboxes:
                     if pixel_pct > 0:
                         changes.append(
@@ -377,6 +409,8 @@ def compare_pdfs(
                     pixelDiffPct=pixel_pct,
                     changes=changes,
                     maskPath=str(mask_path) if mask_path else None,
+                    baselinePath=str(baseline_png) if baseline_png else None,
+                    candidatePath=str(candidate_png) if candidate_png else None,
                 )
             )
 
@@ -409,8 +443,17 @@ def compare_pdfs(
         assertion = None
         if config.threshold is not None:
             observed = max((p.pixelDiffPct for p in pages), default=0.0)
+            structural_change = any(p.changes for p in pages)
+            page_count_mismatch = len(doc_a) != len(doc_b)
+            passes = (
+                observed <= config.threshold
+                and not structural_change
+                and not page_count_mismatch
+            )
+            if page_count_mismatch or structural_change:
+                observed = max(observed, 100.0) if observed == 0 else observed
             assertion = AssertionResult(
-                pass_=observed <= config.threshold,
+                pass_=passes,
                 threshold=config.threshold,
                 observed=observed,
             )

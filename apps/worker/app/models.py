@@ -26,6 +26,8 @@ class PageDiff(BaseModel):
     pixelDiffPct: float = Field(alias="pixelDiffPct")
     changes: list[PageChange]
     maskPath: str | None = None
+    baselinePath: str | None = None
+    candidatePath: str | None = None
 
     model_config = {"populate_by_name": True}
 

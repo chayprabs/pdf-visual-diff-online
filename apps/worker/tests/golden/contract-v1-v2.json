@@ -1,0 +1,136 @@
+{
+  "pages": [
+    {
+      "page": 1,
+      "pixelDiffPct": 0.08343479909778638,
+      "changes": [
+        {
+          "kind": "image",
+          "bbox": [
+            145.0,
+            64.0,
+            236.0,
+            87.0
+          ],
+          "description": "Visual change (0.08% pixels)"
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            60.17499923706055,
+            165.54397583007812,
+            75.28900146484375
+          ],
+          "description": "Removed text: \"Signed Contract v1\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            75.28901672363281,
+            147.81198120117188,
+            90.40301513671875
+          ],
+          "description": "Removed text: \"Party A agrees.\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            60.17499923706055,
+            165.54397583007812,
+            75.28900146484375
+          ],
+          "description": "Added text: \"Signed Contract v2\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            75.28901672363281,
+            237.06594848632812,
+            90.40301513671875
+          ],
+          "description": "Added text: \"Party A agrees with amendments.\""
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "format": "PDF 1.7"
+  },
+  "metadataDiff": null,
+  "signatures": {
+    "baseline": {
+      "present": false,
+      "valid": null,
+      "details": "No AcroForm"
+    },
+    "candidate": {
+      "present": false,
+      "valid": null,
+      "details": "No AcroForm"
+    }
+  },
+  "textDiff": [
+    {
+      "page": 1,
+      "changes": [
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            60.17499923706055,
+            165.54397583007812,
+            75.28900146484375
+          ],
+          "description": "Removed text: \"Signed Contract v1\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            75.28901672363281,
+            147.81198120117188,
+            90.40301513671875
+          ],
+          "description": "Removed text: \"Party A agrees.\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            60.17499923706055,
+            165.54397583007812,
+            75.28900146484375
+          ],
+          "description": "Added text: \"Signed Contract v2\""
+        },
+        {
+          "kind": "text",
+          "bbox": [
+            72.0,
+            75.28901672363281,
+            237.06594848632812,
+            90.40301513671875
+          ],
+          "description": "Added text: \"Party A agrees with amendments.\""
+        }
+      ]
+    }
+  ],
+  "objectDiff": {
+    "annotations": [],
+    "formFields": [],
+    "attachments": [],
+    "bookmarks": [],
+    "signatures": []
+  },
+  "fontDiff": {
+    "added": [],
+    "removed": []
+  },
+  "summary": "1 page(s) have differences. Page 1: 0.08% pixel change, 5 change(s)",
+  "assertion": null
+}

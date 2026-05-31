@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
+import fitz
+import pikepdf
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -26,10 +29,21 @@ app.add_middleware(
 
 RETENTION_SECONDS = int(os.environ.get("ARTIFACT_TTL_SECONDS", "3600"))
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "50"))
+JOBS_ROOT = Path(tempfile.gettempdir()) / "pdf-diff"
+
+
+def _cleanup_stale_jobs() -> None:
+    if not JOBS_ROOT.exists():
+        return
+    cutoff = time.time() - RETENTION_SECONDS
+    for job_dir in JOBS_ROOT.iterdir():
+        if job_dir.is_dir() and job_dir.stat().st_mtime < cutoff:
+            shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    _cleanup_stale_jobs()
     return {"status": "ok"}
 
 
@@ -49,9 +63,17 @@ def _parse_opts(
     tolerance: int | None,
     threshold: float | None,
 ) -> DiffConfig:
+    resolved_dpi = 150 if dpi is None else dpi
+    resolved_tolerance = 12 if tolerance is None else tolerance
+    if resolved_dpi < 36 or resolved_dpi > 600:
+        raise HTTPException(422, "dpi must be between 36 and 600")
+    if resolved_tolerance < 0 or resolved_tolerance > 100:
+        raise HTTPException(422, "tolerance must be between 0 and 100")
+    if threshold is not None and threshold < 0:
+        raise HTTPException(422, "threshold must be non-negative")
     return DiffConfig(
-        dpi=dpi or 150,
-        tolerance=tolerance or 12,
+        dpi=resolved_dpi,
+        tolerance=resolved_tolerance,
         threshold=threshold,
     )
 
@@ -59,9 +81,14 @@ def _parse_opts(
 def _serialize_result(result: DiffResult, job_id: str) -> dict:
     data = result.model_dump(by_alias=True)
     for page in data.get("pages", []):
-        mask = page.pop("maskPath", None)
-        if mask:
-            page["maskUrl"] = f"/v1/artifacts/{job_id}/{Path(mask).name}"
+        for key, url_key in (
+            ("maskPath", "maskUrl"),
+            ("baselinePath", "baselineUrl"),
+            ("candidatePath", "candidateUrl"),
+        ):
+            path_val = page.pop(key, None)
+            if path_val:
+                page[url_key] = f"/v1/artifacts/{job_id}/{Path(path_val).name}"
     bundle = data.pop("bundlePath", None)
     if bundle:
         data["bundleUrl"] = f"/v1/artifacts/{job_id}/{Path(bundle).name}"
@@ -75,8 +102,9 @@ async def diff_endpoint(
     dpi: int = Form(150),
     tolerance: int = Form(12),
 ):
+    _cleanup_stale_jobs()
     job_id = uuid.uuid4().hex
-    job_dir = Path(tempfile.gettempdir()) / "pdf-diff" / job_id
+    job_dir = JOBS_ROOT / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     baseline_path = job_dir / "baseline.pdf"
     candidate_path = job_dir / "candidate.pdf"
@@ -89,6 +117,8 @@ async def diff_endpoint(
         return JSONResponse(_serialize_result(result, job_id))
     except HTTPException:
         raise
+    except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
+        raise HTTPException(422, "Invalid or corrupt PDF") from exc
     except Exception as exc:
         raise HTTPException(500, "Diff failed") from exc
 
@@ -101,8 +131,9 @@ async def assert_endpoint(
     tolerance: int = Form(12),
     threshold: float = Form(0.5),
 ):
+    _cleanup_stale_jobs()
     job_id = uuid.uuid4().hex
-    job_dir = Path(tempfile.gettempdir()) / "pdf-diff" / job_id
+    job_dir = JOBS_ROOT / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     baseline_path = job_dir / "baseline.pdf"
     candidate_path = job_dir / "candidate.pdf"
@@ -115,6 +146,8 @@ async def assert_endpoint(
         return JSONResponse(_serialize_result(result, job_id))
     except HTTPException:
         raise
+    except (fitz.FileDataError, pikepdf.PdfError, ValueError) as exc:
+        raise HTTPException(422, "Invalid or corrupt PDF") from exc
     except Exception as exc:
         raise HTTPException(500, "Assert diff failed") from exc
 
@@ -123,7 +156,7 @@ async def assert_endpoint(
 def get_artifact(job_id: str, filename: str):
     if ".." in job_id or ".." in filename:
         raise HTTPException(400, "Invalid path")
-    path = Path(tempfile.gettempdir()) / "pdf-diff" / job_id / filename
+    path = JOBS_ROOT / job_id / filename
     if not path.exists():
         raise HTTPException(404, "Artifact not found")
     return FileResponse(

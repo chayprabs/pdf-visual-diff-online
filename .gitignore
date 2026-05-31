@@ -19,6 +19,15 @@ venv/
 .idea/
 .vscode/
 *.local.md
+*.tsbuildinfo
 
 # Legacy local-only planning copies (uploaded duplicates)
 uploads/
+
+# Ephemeral diff job output under samples
+samples/.job-*/
+samples/**/mask-*.png
+samples/**/diff-bundle.zip
+samples/**/summary.html
+samples/.job-*/
+

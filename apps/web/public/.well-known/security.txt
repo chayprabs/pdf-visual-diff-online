@@ -1,0 +1,4 @@
+Contact: https://github.com/chayprabs/pdf-visual-diff-online/security/advisories/new
+Expires: 2027-05-31T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://github.com/chayprabs/pdf-visual-diff-online

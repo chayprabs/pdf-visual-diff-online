@@ -3,7 +3,7 @@
 import type { DiffResult, FontResourceDiff } from "@pdf-diff/shared-types";
 
 function FontResourceSection({ fontDiff }: { fontDiff: FontResourceDiff | undefined }) {
-  if (!fontDiff) return null;
+  if (!fontDiff?.fonts || !fontDiff?.images) return null;
   return (
     <>
       <div className="mt-2 text-sm">

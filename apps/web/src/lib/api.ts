@@ -42,8 +42,14 @@ export async function runDiff(
   }
 
   const data = await res.json();
+  if (data.fontDiff && !data.fontDiff.fonts && (data.fontDiff.added || data.fontDiff.removed)) {
+    data.fontDiff = {
+      fonts: { added: data.fontDiff.added ?? [], removed: data.fontDiff.removed ?? [] },
+      images: { added: [], removed: [] },
+    };
+  }
   if (data.assertion) {
-    if ("pass" in data.assertion === false && "pass_" in data.assertion) {
+    if (!("pass" in data.assertion) && "pass_" in data.assertion) {
       data.assertion.pass = data.assertion.pass_;
     }
     if (data.assertion.failureReason === undefined && data.assertion.failure_reason) {

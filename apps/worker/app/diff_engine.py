@@ -12,7 +12,6 @@ from typing import Any
 import fitz  # PyMuPDF
 import numpy as np
 import pikepdf
-import pixelmatch
 from PIL import Image
 
 from app.models import (
@@ -42,39 +41,43 @@ def _render_page(doc: fitz.Document, page_num: int, dpi: int) -> Image.Image:
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
 
 
+MAX_DIFF_SIDE_PX = int(os.environ.get("MAX_DIFF_SIDE_PX", "2400"))
+
+
+def _downscale_for_diff(img: Image.Image, max_side: int = MAX_DIFF_SIDE_PX) -> Image.Image:
+    if max(img.size) <= max_side:
+        return img
+    ratio = max_side / max(img.size)
+    return img.resize(
+        (int(img.width * ratio), int(img.height * ratio)),
+        Image.Resampling.LANCZOS,
+    )
+
+
 def _pixel_diff_pct(
     img_a: Image.Image, img_b: Image.Image, tolerance: int
 ) -> tuple[float, Image.Image, list[tuple[float, float, float, float]], bool]:
     size_mismatch = img_a.size != img_b.size
     if size_mismatch:
         img_b = img_b.resize(img_a.size, Image.Resampling.LANCZOS)
-    w, h = img_a.size
-    arr_a = np.array(img_a.convert("RGBA"), dtype=np.uint8)
-    arr_b = np.array(img_b.convert("RGBA"), dtype=np.uint8)
-    flat_a = arr_a.flatten().tolist()
-    flat_b = arr_b.flatten().tolist()
-    out = [0] * (w * h * 4)
-    pm_threshold = max(0.01, min(1.0, tolerance / 100.0))
-    mismatched = pixelmatch.pixelmatch(
-        flat_a,
-        flat_b,
-        w,
-        h,
-        output=out,
-        threshold=pm_threshold,
-        includeAA=tolerance < 5,
-    )
-    pct = (mismatched / (w * h)) * 100.0 if w * h else 0.0
-    mask_img = Image.frombytes("RGBA", (w, h), bytes(out)).convert("RGB")
+    img_a = _downscale_for_diff(img_a)
+    img_b = _downscale_for_diff(img_b)
+    if img_b.size != img_a.size:
+        img_b = img_b.resize(img_a.size, Image.Resampling.LANCZOS)
+    a = np.array(img_a.convert("RGB"), dtype=np.int16)
+    b = np.array(img_b.convert("RGB"), dtype=np.int16)
+    channel_max = np.abs(a - b).max(axis=2)
+    mask = channel_max > tolerance
+    pct = float(mask.mean() * 100.0) if mask.size else 0.0
+    mask_rgb = np.zeros((*mask.shape, 3), dtype=np.uint8)
+    mask_rgb[mask] = [255, 0, 0]
+    mask_img = Image.fromarray(mask_rgb)
     bboxes: list[tuple[float, float, float, float]] = []
-    if mismatched > 0:
-        arr = np.array(mask_img)
-        red = (arr[:, :, 0] > 200) & (arr[:, :, 1] < 80)
-        if red.any():
-            ys, xs = np.where(red)
-            bboxes.append(
-                (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
-            )
+    if mask.any():
+        ys, xs = np.where(mask)
+        bboxes.append(
+            (float(xs.min()), float(ys.min()), float(xs.max()), float(ys.max()))
+        )
     return pct, mask_img, bboxes, size_mismatch
 
 

@@ -5,10 +5,13 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       CORS_ORIGINS: http://localhost:3000,http://web:3000
       ARTIFACT_TTL_SECONDS: "3600"
       MAX_UPLOAD_MB: "50"
+      MAX_DIFF_SIDE_PX: "2400"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 30s
@@ -22,8 +25,11 @@ services:
       dockerfile: apps/web/Dockerfile
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       WORKER_URL: http://worker:8000
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
     depends_on:
       worker:
         condition: service_healthy

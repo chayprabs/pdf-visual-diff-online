@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -13,7 +14,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-from app.diff_engine import DiffConfig, cleanup_job, compare_pdfs
+from app.diff_engine import DiffConfig, compare_pdfs
 from app.models import DiffResult
 
 app = FastAPI(title="PdfDiff Worker", version="1.0.0")
@@ -95,17 +96,21 @@ def _serialize_result(result: DiffResult, job_id: str) -> dict:
     return data
 
 
-def _open_compare(
-    baseline_path: Path,
-    candidate_path: Path,
-    config: DiffConfig,
-    job_id: str,
-) -> JSONResponse:
-    result = compare_pdfs(baseline_path, candidate_path, config)
-    return JSONResponse(_serialize_result(result, job_id))
+def _baseline_path(baselines_dir: str, repo: str, branch: str, *, mkdir: bool = False) -> Path:
+    if ".." in repo or ".." in branch or repo.startswith("/") or branch.startswith("/"):
+        raise HTTPException(422, "Invalid repo or branch name")
+    base = Path(baselines_dir).resolve()
+    safe_repo = "".join(c if c.isalnum() or c in "-_" else "_" for c in repo)[:120]
+    safe_branch = "".join(c if c.isalnum() or c in "-_" else "_" for c in branch)[:64]
+    dest_dir = (base / safe_repo / safe_branch).resolve()
+    if not dest_dir.is_relative_to(base):
+        raise HTTPException(422, "Invalid baseline path")
+    if mkdir:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+    return dest_dir / "baseline.pdf"
 
 
-def _handle_compare(
+async def _handle_compare(
     baseline: UploadFile,
     candidate: UploadFile,
     config: DiffConfig,
@@ -121,7 +126,9 @@ def _handle_compare(
         _save_upload(baseline, baseline_path)
         _save_upload(candidate, candidate_path)
         config.job_dir = job_dir
-        return _open_compare(baseline_path, candidate_path, config, job_id)
+        result = await asyncio.to_thread(compare_pdfs, baseline_path, candidate_path, config)
+        _cleanup_stale_jobs()
+        return JSONResponse(_serialize_result(result, job_id))
     except HTTPException:
         shutil.rmtree(job_dir, ignore_errors=True)
         raise
@@ -145,7 +152,7 @@ async def diff_endpoint(
     config = _parse_opts(dpi, tolerance, None)
     config.baseline_password = baseline_password or None
     config.candidate_password = candidate_password or None
-    return _handle_compare(baseline, candidate, config, "Diff failed")
+    return await _handle_compare(baseline, candidate, config, "Diff failed")
 
 
 @app.post("/v1/assert")
@@ -161,7 +168,7 @@ async def assert_endpoint(
     config = _parse_opts(dpi, tolerance, threshold)
     config.baseline_password = baseline_password or None
     config.candidate_password = candidate_password or None
-    return _handle_compare(baseline, candidate, config, "Assert diff failed")
+    return await _handle_compare(baseline, candidate, config, "Assert diff failed")
 
 
 @app.post("/v1/baselines")
@@ -177,10 +184,7 @@ async def save_baseline(
             501,
             "Baseline storage not enabled. Set BASELINES_DIR on the worker to enable Pro baselines.",
         )
-    safe_repo = "".join(c if c.isalnum() or c in "-_/" else "_" for c in repo)
-    dest_dir = Path(baselines_dir) / safe_repo / branch
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / "baseline.pdf"
+    dest = _baseline_path(baselines_dir, repo, branch, mkdir=True)
     _save_upload(baseline, dest)
     return {"saved": True, "path": str(dest)}
 
@@ -190,8 +194,7 @@ def get_baseline(repo: str, branch: str = "main"):
     baselines_dir = os.environ.get("BASELINES_DIR")
     if not baselines_dir:
         raise HTTPException(501, "Baseline storage not enabled")
-    safe_repo = "".join(c if c.isalnum() or c in "-_/" else "_" for c in repo)
-    path = Path(baselines_dir) / safe_repo / branch / "baseline.pdf"
+    path = _baseline_path(baselines_dir, repo, branch)
     if not path.exists():
         raise HTTPException(404, "Baseline not found")
     return FileResponse(path, headers={"Cache-Control": "private, no-store"})

@@ -5,6 +5,7 @@ import { DiffDrawer } from "@/components/DiffDrawer";
 import { PagePreview } from "@/components/PagePreview";
 import { Download, FileUp, Loader2, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { assertFailureDetail } from "@/lib/assertMessages";
 import { artifactUrl, runDiff } from "@/lib/api";
 
 const MAX_MB = 50;
@@ -22,10 +23,12 @@ function FileSlot({
   label,
   file,
   onFile,
+  onReject,
 }: {
   label: string;
   file: File | null;
   onFile: (f: File | null) => void;
+  onReject?: (message: string) => void;
 }) {
   const [dragOver, setDragOver] = useState(false);
 
@@ -35,6 +38,7 @@ function FileSlot({
       f.type === "application/pdf" ||
       f.name.toLowerCase().endsWith(".pdf");
     if (isPdf) onFile(f);
+    else onReject?.("Only PDF files are supported.");
   };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,9 +123,11 @@ export function PdfDiffPlayground() {
   const [result, setResult] = useState<DiffResult | null>(null);
   const [selectedPage, setSelectedPage] = useState(1);
   const [viewMode, setViewMode] = useState<ViewMode>("summary");
+  const [sampleLoading, setSampleLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const loadSample = async (baselineUrl: string, candidateUrl: string) => {
+    setSampleLoading(true);
     try {
       const [bRes, cRes] = await Promise.all([fetch(baselineUrl), fetch(candidateUrl)]);
       if (!bRes.ok || !cRes.ok) {
@@ -142,6 +148,8 @@ export function PdfDiffPlayground() {
       setError(null);
     } catch {
       setError("Failed to load sample files. Run scripts/generate_samples.py.");
+    } finally {
+      setSampleLoading(false);
     }
   };
 
@@ -194,16 +202,17 @@ export function PdfDiffPlayground() {
           <button
             key={s.name}
             type="button"
-            onClick={() => loadSample(s.baseline, s.candidate)}
-            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--foreground)]"
+            disabled={sampleLoading || loading}
+            onClick={() => void loadSample(s.baseline, s.candidate)}
+            className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--foreground)] disabled:opacity-50"
           >
             Sample: {s.name}
           </button>
         ))}
       </div>
       <div className="flex flex-col gap-4 sm:flex-row">
-        <FileSlot label="Baseline PDF" file={baseline} onFile={setBaseline} />
-        <FileSlot label="Candidate PDF" file={candidate} onFile={setCandidate} />
+        <FileSlot label="Baseline PDF" file={baseline} onFile={setBaseline} onReject={setError} />
+        <FileSlot label="Candidate PDF" file={candidate} onFile={setCandidate} onReject={setError} />
       </div>
 
       <div className="mt-6 flex flex-wrap items-end gap-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -216,7 +225,8 @@ export function PdfDiffPlayground() {
             value={dpi}
             onChange={(e) => {
               const v = parseInt(e.target.value, 10);
-              setDpi(Number.isFinite(v) ? v : 150);
+              const next = Number.isFinite(v) ? v : 150;
+              setDpi(Math.min(600, Math.max(36, next)));
             }}
             className="w-24 rounded border border-[var(--border)] px-2 py-1"
           />
@@ -249,7 +259,10 @@ export function PdfDiffPlayground() {
               step={0.1}
               min={0}
               value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setThreshold(Number.isFinite(v) ? v : 0.5);
+              }}
               className="w-24 rounded border border-[var(--border)] px-2 py-1"
             />
           </label>
@@ -290,7 +303,7 @@ export function PdfDiffPlayground() {
           <button
             type="button"
             onClick={run}
-            disabled={loading}
+            disabled={loading || sampleLoading || !baseline || !candidate}
             aria-busy={loading}
             className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
           >
@@ -325,22 +338,17 @@ export function PdfDiffPlayground() {
               {result.assertion.pass ? "PASS" : "FAIL"} — observed{" "}
               {result.assertion.observed.toFixed(2)}% pixel diff (threshold{" "}
               {result.assertion.threshold}%)
-              {!result.assertion.pass &&
-                result.assertion.failureReason &&
-                result.assertion.failureReason !== "pixel_threshold" && (
-                  <span className="mt-1 block text-xs font-normal">
-                    Also failed: structural/text/signature or page-count changes
-                    {result.assertion.failureReason === "page_count_mismatch"
-                      ? " (page count mismatch)"
-                      : ""}
-                  </span>
-                )}
+              {!result.assertion.pass && assertFailureDetail(result.assertion) && (
+                <span className="mt-1 block text-xs font-normal">
+                  {assertFailureDetail(result.assertion)}
+                </span>
+              )}
             </div>
           )}
 
           {result.bundleUrl && (
             <a
-              href={artifactUrl(result.bundleUrl)}
+              href={artifactUrl(result.bundleUrl)!}
               download
               className="inline-flex items-center gap-2 text-sm text-[var(--accent)] hover:underline"
             >

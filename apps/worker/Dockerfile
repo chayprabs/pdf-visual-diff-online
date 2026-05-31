@@ -7,8 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
-ENV JOB_DIR=/tmp/pdf-diff-jobs
 ENV CORS_ORIGINS=http://localhost:3000,http://web:3000
+ENV MAX_DIFF_SIDE_PX=2400
 
 EXPOSE 8000
 

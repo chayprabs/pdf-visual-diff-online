@@ -41,7 +41,7 @@ export function TopBar() {
             className="text-[var(--muted)] transition hover:text-[var(--foreground)]"
             aria-label="GitHub repository"
           >
-            <Github className="h-5 w-5" />
+            <GitHubIcon className="h-5 w-5" />
           </a>
           <a
             href={TWITTER_URL}

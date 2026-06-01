@@ -1,13 +1,13 @@
 "use client";
 
 import type { PageDiff } from "@pdf-diff/shared-types";
+import { useState } from "react";
 import { BboxOverlay } from "@/components/BboxOverlay";
 import { artifactUrl } from "@/lib/api";
-import { useEffect, useState } from "react";
 
 type ViewMode = "baseline" | "candidate" | "overlay" | "mask";
 
-export function PagePreview({
+function PagePreviewContent({
   page,
   viewMode,
 }: {
@@ -15,10 +15,6 @@ export function PagePreview({
   viewMode: ViewMode;
 }) {
   const [size, setSize] = useState({ w: 0, h: 0 });
-
-  useEffect(() => {
-    setSize({ w: 0, h: 0 });
-  }, [viewMode, page.page]);
 
   const url =
     viewMode === "baseline"
@@ -77,5 +73,15 @@ export function PagePreview({
       />
       {showBbox && <BboxOverlay changes={page.changes} imageWidth={size.w} imageHeight={size.h} />}
     </div>
+  );
+}
+
+export function PagePreview(props: { page: PageDiff; viewMode: ViewMode }) {
+  return (
+    <PagePreviewContent
+      key={`${props.page.page}-${props.viewMode}`}
+      page={props.page}
+      viewMode={props.viewMode}
+    />
   );
 }
